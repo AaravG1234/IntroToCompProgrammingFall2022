@@ -1,196 +1,278 @@
-#Sources:
-#For future reference: https://opensource.com/article/18/5/pygame-enemy ( How to expand on mobs in pygame)
+#Sources
+#@title Run this to download data and prepare our environment! { display-mode: "form" }
+#%tensorflow_version 1.x
 
-#import libraries
-import pygame as pg
-from pygame.sprite import Sprite
-import random
+import gdown
+import zipfile
 
-from random import randint
+import os
+import numpy as np
+import pandas as pd
 
-vec = pg.math.Vector2
+import seaborn as sns
+import matplotlib.pyplot as plt
 
-#game layout
-WIDTH = 360
-HEIGHT = 450
-FPS = 100
+from sklearn.metrics import accuracy_score, confusion_matrix
 
-#player settings
-PLAYER_GRAV = 0.9
-HEALTH = 100
+import tensorflow.keras as keras
+import keras.optimizers as optimizers
+from keras.models import Sequential
+from keras.layers import Activation, MaxPooling2D, Dropout, Flatten, Reshape, Dense, Conv2D, GlobalAveragePooling2D, BatchNormalization
+from keras.regularizers import l2
+from keras.callbacks import ModelCheckpoint
+
+from keras.applications.vgg16 import VGG16
+from keras.applications.vgg19 import VGG19
+from tensorflow.keras.applications.resnet50 import ResNet50
+from keras.applications.densenet import DenseNet121
 
 
+class pkg:
+  #### DOWNLOADING AND LOADING DATA
+  def get_metadata(metadata_path, which_splits = ['train', 'test']):  
+    '''returns metadata dataframe which contains columns of:
+       * index: index of data into numpy data
+       * class: class of image
+       * split: which dataset split is this a part of? 
+    '''
+    metadata = pd.read_csv(metadata_path)
+    keep_idx = metadata['split'].isin(which_splits)
+    return metadata[keep_idx]
 
-# define colors
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-GREY = (100, 0 , 0)
+  def get_data_split(split_name, flatten, all_data, metadata, image_shape):
+    '''
+    returns images (data), labels from folder of format [image_folder]/[split_name]/[class_name]/
+    flattens if flatten option is True 
+    '''
+    sub_df = metadata[metadata['split'].isin([split_name])]
+    index  = sub_df['index'].values
+    labels = sub_df['class'].values
+    data = all_data[index,:]
+    if flatten:
+      data = data.reshape([-1, np.product(image_shape)])
+    return data, labels
 
-#rules and objectives
-def main1():
-    x = input("Hey, what is your name?")
-    print("Hey!!!", x,)
-    print("Welcome to Dodge.IO")
-    print("Your goal as the player is to dodge the incoming mobs")
-    print("Each hit mob results in a 10 health deduction; You start with 100 health")
-    print("This is still a developing version of the game")
-    print("Good luck and have fun!!!")
+  def get_train_data(flatten, all_data, metadata, image_shape):
+    return get_data_split('train', flatten, all_data, metadata, image_shape)
 
-main1()
+  def get_test_data(flatten, all_data, metadata, image_shape):
+    return get_data_split('test', flatten, all_data, metadata, image_shape)
 
-#function for text
-def draw_text(text, size, color, x, y):
-        font_name = pg.font.match_font('arial')
-        font = pg.font.Font(font_name, size)
-        text_surface = font.render(text, True, color)
-        text_rect = text_surface.get_rect()
-        text_rect.midtop = (x, y)
-        screen.blit(text_surface, text_rect)
+  def get_field_data(flatten, all_data, metadata, image_shape):
+    return get_data_split('field', flatten, all_data, metadata, image_shape)
+  
+class helpers:
+  #### PLOTTING
+  def plot_one_image(data, labels = [], index = None, image_shape = [64,64,3]):
+    '''
+    if data is a single image, display that image
+
+    if data is a 4d stack of images, display that image
+    '''
+    num_dims   = len(data.shape)
+    num_labels = len(labels)
+
+    # reshape data if necessary
+    if num_dims == 1:
+      data = data.reshape(target_shape)
+    if num_dims == 2:
+      data = data.reshape(np.vstack[-1, image_shape])
+    num_dims   = len(data.shape)
+
+    # check if single or multiple images
+    if num_dims == 3:
+      if num_labels > 1:
+        print('Multiple labels does not make sense for single image.')
+        return
+
+      label = labels      
+      if num_labels == 0:
+        label = ''
+      image = data
+
+    if num_dims == 4:
+      image = data[index, :]
+      label = labels[index]
+
+    # plot image of interest
+    print('Label: %s'%label)
+    plt.imshow(image)
+    plt.show()
+
+  #### QUERYING AND COMBINING DATA
+  def get_misclassified_data(data, labels, predictions):
+    '''
+    Gets the data and labels that are misclassified in a classification task
+    Returns:
+    -missed_data
+    -missed_labels
+    -predicted_labels (corresponding to missed_labels)
+    -missed_index (indices of items in original dataset)
+    '''
+    missed_index     = np.where(np.abs(predictions.squeeze() - labels.squeeze()) > 0)[0]
+    missed_labels    = labels[missed_index]
+    missed_data      = data[missed_index,:]
+    predicted_labels = predictions[missed_index]
+    return missed_data, missed_labels, predicted_labels, missed_index
+
+  def combine_data(data_list, labels_list):
+    return np.concatenate(data_list, axis = 0), np.concatenate(labels_list, axis = 0)
+
+  def model_to_string(model):
+    import re
+    stringlist = []
+    model.summary(print_fn=lambda x: stringlist.append(x))
+    sms = "\n".join(stringlist)
+    sms = re.sub('_\d\d\d','', sms)
+    sms = re.sub('_\d\d','', sms)
+    sms = re.sub('_\d','', sms)  
+    return sms
+
+  def plot_acc(history, ax = None, xlabel = 'Epoch #'):
+    # i'm sorry for this function's code. i am so sorry. 
+    history = history.history
+    history.update({'epoch':list(range(len(history['val_accuracy'])))})
+    history = pd.DataFrame.from_dict(history)
+
+    best_epoch = history.sort_values(by = 'val_accuracy', ascending = False).iloc[0]['epoch']
+
+    if not ax:
+      f, ax = plt.subplots(1,1)
+    sns.lineplot(x = 'epoch', y = 'val_accuracy', data = history, label = 'Validation', ax = ax)
+    sns.lineplot(x = 'epoch', y = 'accuracy', data = history, label = 'Training', ax = ax)
+    ax.axhline(0.5, linestyle = '--',color='red', label = 'Chance')
+    ax.axvline(x = best_epoch, linestyle = '--', color = 'green', label = 'Best Epoch')  
+    ax.legend(loc = 4)    
+    ax.set_ylim([0.4, 1])
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel('Accuracy (Fraction)')
     
-def colorbyte():
-    return random.randint(0,255)
+    plt.show()
 
+class models:
+  def DenseClassifier(hidden_layer_sizes, nn_params):
+    model = Sequential()
+    model.add(Flatten(input_shape = nn_params['input_shape']))
+    model.add(Dropout(0.5))
 
-#class for player and its controls
-class Player(Sprite):
-    def __init__(self):
-        Sprite.__init__(self)
-        #self.image = (screen, WHITE, ((95, 120), (80, 180), (110, 180)))
-        self.image = pg.Surface((35, 35))
-        self.image.fill(WHITE)
-        self.rect = self.image.get_rect()
-        #self.rect.center = (WIDTH, HEIGHT/2)
-        self.pos = vec(250, HEIGHT/2)
-        self.vel = vec(0,0)
-        self.acc = vec(0,0)
+    for ilayer in hidden_layer_sizes:
+      model.add(Dense(ilayer, activation = 'relu'))
+      model.add(Dropout(0.5))
+    
+    model.add(Dense(units = nn_params['output_neurons'], activation = nn_params['output_activation']))
+    model.compile(loss=nn_params['loss'],
+                  optimizer= keras.optimizers.SGD(learning_rate=1e-4, momentum=0.95),
+                  metrics=['accuracy'])
+    return model
 
-#controls of the player
-    def controls(self):
-        keys = pg.key.get_pressed()
-        if keys[pg.K_d]:
-            self.acc.x = 0.75
-        if keys[pg.K_SPACE]:
-            self.acc.x = -0.3
-        if keys[pg.K_a]:
-            self.acc.x = -0.75
+  def CNNClassifier(num_hidden_layers, nn_params):
+    model = Sequential()
 
-    def update(self):
-        self.acc = vec(0,PLAYER_GRAV)
-        self.controls()
-        # friction
-        self.acc.x += self.vel.x * -0.1
-        # self.acc.y += self.vel.y * -0.1
-        self.vel += self.acc
-        self.pos += self.vel + 0.5 * self.acc
-        # self.rect.x += self.xvel
-        # self.rect.y += self.yvel
-        self.rect.midbottom = self.pos
-        if HEALTH < 0: 
-            print("you lost, the game is over")
-            pg.quit
+    model.add(Conv2D(32, (3, 3), input_shape=nn_params['input_shape'], padding = 'same', kernel_regularizer=l2(0.01), bias_regularizer=l2(0.01)))
+    model.add(Activation('relu'))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
 
+    for i in range(num_hidden_layers-1):
+        model.add(Conv2D(64, (3, 3), padding = 'same', kernel_regularizer=l2(0.01), bias_regularizer=l2(0.01)))
+        model.add(Activation('relu'))
+        model.add(MaxPooling2D(pool_size=(2, 2)))
 
-#class for the platforms and mobs
-class Platform(Sprite):
-    def __init__(self, x, y, w, h):
-        Sprite.__init__(self)
-        self.image = pg.Surface((w, h))
-        self.image.fill(GREY)
-        self.rect = self.image.get_rect()
-        self.rect.x = x
-        self.rect.y = y
+    model.add(Flatten()) 
 
-#class for the mobs in the game
-class Mob(Sprite):
-    def __init__(self, x, y, w, h, color):
-        Sprite.__init__(self)
-        self.image = pg.Surface((w, h))
-        self.color = color
-        self.image.fill(color)
-        self.rect = self.image.get_rect()
-        self.rect.x = x
-        self.rect.y = y
-    #fuction to update mob position
-    def update(self):
-        x = randint(0, 2)
-        self.rect.y += x
+    model.add(Dense(units = 128, activation = 'relu'))
+    model.add(Dropout(0.5))
+    model.add(Dense(units = 64, activation = 'relu', kernel_regularizer=l2(0.01), bias_regularizer=l2(0.01)))
+    model.add(Dropout(0.5))
 
+    model.add(Dense(units = nn_params['output_neurons'], activation = nn_params['output_activation']))
 
-pg.init()
-pg.mixer.init()
-screen = pg.display.set_mode((WIDTH, HEIGHT))
-pg.display.set_caption("My Game...")
-clock = pg.time.Clock()
+    # initiate RMSprop optimizer
+    opt = keras.optimizers.RMSprop(learning_rate=1e-5, decay=1e-6)
 
-#grouping the classes
-all_sprites = pg.sprite.Group()
-all_plats = pg.sprite.Group()
-mobs = pg.sprite.Group()
+    # Let's train the model using RMSprop
+    model.compile(loss=nn_params['loss'],
+                  optimizer=opt,
+                  metrics=['accuracy'])    
+    return model
 
+  def TransferClassifier(name, nn_params, trainable = True):
+    expert_dict = {'VGG16': VGG16, 
+                   'VGG19': VGG19,
+                   'ResNet50':ResNet50,
+                   'DenseNet121':DenseNet121}
 
-# instantiate classes
-player = Player()
-plat = Platform(0, 420, WIDTH*10, 10)
+    expert_conv = expert_dict[name](weights = 'imagenet', 
+                                              include_top = False, 
+                                              input_shape = nn_params['input_shape'])
+    for layer in expert_conv.layers:
+      layer.trainable = trainable
+      
+    expert_model = Sequential()
+    expert_model.add(expert_conv)
+    expert_model.add(GlobalAveragePooling2D())
 
-#creating mobs
-x = 0
-while x < 30:
-    m = Mob(randint(0, WIDTH), randint(-300, 0), 30, 30, (colorbyte(),colorbyte(),colorbyte()))
-    all_sprites.add(m)
-    mobs.add(m)
-    x +=1 
+    expert_model.add(Dense(128, activation = 'relu'))
+    expert_model.add(Dropout(0.5))
 
-# add player to all sprites group
-all_sprites.add(player)
-all_plats.add(plat)
+    expert_model.add(Dense(64, activation = 'relu'))
+    expert_model.add(Dropout(0.5))
 
-# add platform to all sprites group
-all_sprites.add(plat)
+    expert_model.add(Dense(nn_params['output_neurons'], activation = nn_params['output_activation']))
 
+    expert_model.compile(loss = nn_params['loss'], 
+                  optimizer = keras.optimizers.SGD(learning_rate=1e-4, momentum=0.9), 
+                  metrics=['accuracy'])
 
-#looping the game
-running = True
-while running:
-    # keep the loop running using clock
-    -clock.tick(FPS)
+    return expert_model
 
-    hits = pg.sprite.spritecollide(player, all_plats, False)
-    if hits:
-        player.pos.y = hits[0].rect.top
-        player.vel.y = 0
+### defining project variables
+# file variables
+metadata_url         = "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/metadata.csv"
+image_data_url       = 'https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/image_data.npy'
+image_data_path      = './image_data.npy'
+metadata_path        = './metadata.csv'
+image_shape          = (64, 64, 3)
 
+# neural net parameters
+nn_params = {}
+nn_params['input_shape']       = image_shape
+nn_params['output_neurons']    = 1
+nn_params['loss']              = 'binary_crossentropy'
+nn_params['output_activation'] = 'sigmoid'
 
-    mobhits = pg.sprite.spritecollide(player, mobs, True)
-    if mobhits:
-        screen.fill(RED)
-        HEALTH -= 10
-        
+###
+# gdown.download(image_data_url, './image_data.npy', True)
+# gdown.download(metadata_url, './metadata.csv', True)
+!wget "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/metadata.csv"
+!wget "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/image_data.npy"
 
+### pre-loading all data of interest
+_all_data = np.load('image_data.npy')
+_metadata = pkg.get_metadata(metadata_path, ['train','test','field'])
 
-    for event in pg.event.get():
-        # check for closed window
-        if event.type == pg.QUIT:
-            running = False
+### preparing definitions
+# downloading and loading data
+get_data_split = pkg.get_data_split
+get_metadata    = lambda :                 pkg.get_metadata(metadata_path, ['train','test'])
+get_train_data  = lambda flatten = False : pkg.get_train_data(flatten = flatten, all_data = _all_data, metadata = _metadata, image_shape = image_shape)
+get_test_data   = lambda flatten = False : pkg.get_test_data(flatten = flatten, all_data = _all_data, metadata = _metadata, image_shape = image_shape)
+get_field_data  = lambda flatten = False : pkg.get_field_data(flatten = flatten, all_data = _all_data, metadata = _metadata, image_shape = image_shape)
 
-    if HEALTH <= 0:
-        print('You have died')
-        pg.quit()
+# plotting
+plot_one_image = lambda data, labels = [], index = None: helpers.plot_one_image(data = data, labels = labels, index = index, image_shape = image_shape);
+plot_acc       = lambda history: helpers.plot_acc(history)
 
+# querying and combining data
+model_to_string        = lambda model: helpers.model_to_string(model)
+get_misclassified_data = helpers.get_misclassified_data;
+combine_data           = helpers.combine_data;
 
-    # update all sprites
-    all_sprites.update()
+# models with input parameters
+DenseClassifier     = lambda hidden_layer_sizes: models.DenseClassifier(hidden_layer_sizes = hidden_layer_sizes, nn_params = nn_params);
+CNNClassifier       = lambda num_hidden_layers: models.CNNClassifier(num_hidden_layers, nn_params = nn_params);
+TransferClassifier  = lambda name: models.TransferClassifier(name = name, nn_params = nn_params);
 
-    # draw the background screen
-    screen.fill(BLACK)
-    # draw text
-    draw_text("HEALTH " + str(HEALTH), 22, WHITE, WIDTH / 2, HEIGHT / 24)
-    # draw all sprites
-    all_sprites.draw(screen)
+monitor = ModelCheckpoint('./model.h5', monitor='val_accuracy', verbose=0, save_best_only=True, save_weights_only=False, mode='auto', save_freq='epoch')
 
-    # buffer - after drawing everything, flip display
-    pg.display.flip()
-
-pg.quit()
+#Aarav Garai
