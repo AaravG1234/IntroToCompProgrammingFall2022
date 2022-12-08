@@ -1,4 +1,9 @@
 #Sources
+#https://towardsdatascience.com/deep-learning-with-python-neural-networks-complete-tutorial-6b53c0b06af0
+#https://towardsdatascience.com/pneumonia-detection-using-deep-learning-5dc66468eb9
+#https://books.google.com/books?hl=en&lr=&id=ISBKDwAAQBAJ&oi=fnd&pg=PP1&dq=basics+of+expert+models+machine+learning&ots=R9R0Q1lpcA&sig=GfyYBZP8LDyAfZeb9EEXJqOhjD4
+#https://www.sciencedirect.com/science/article/pii/B9780128129708000026
+
 
 import gdown
 import zipfile
