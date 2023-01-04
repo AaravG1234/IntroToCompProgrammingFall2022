@@ -3,6 +3,7 @@
 
 # Objective:
 # Neural Network To Detect Pneumonia and Calculate Accuracy and Precision.
+# I built the CNN model using the Dense and Transfer models as reference.
 
 # What is pneumonia:
    1. Infection in the lung

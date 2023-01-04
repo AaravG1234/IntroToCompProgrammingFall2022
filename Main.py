@@ -5,7 +5,7 @@
 #https://towardsdatascience.com/pneumonia-detection-using-deep-learning-5dc66468eb9
 #https://books.google.com/books?hl=en&lr=&id=ISBKDwAAQBAJ&oi=fnd&pg=PP1&dq=basics+of+expert+models+machine+learning&ots=R9R0Q1lpcA&sig=GfyYBZP8LDyAfZeb9EEXJqOhjD4
 #https://www.sciencedirect.com/science/article/pii/B9780128129708000026
-
+#https://colab.research.google.com/drive/1_3rzBjtNn0G4sg0gARLAXddY1a8-vvn0#scrollTo=aSeClkWgIORK
 
 #Importing all the pythonn libraries
 import gdown
@@ -227,7 +227,7 @@ ur12 = "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Schol
 
 ### pre-loading all data of interest
 _all_data = np.load('image_data.npy')
-_metadata = pkg.get_metadata(metadata_path, ['train','test','field']
+_metadata = pkg.get_metadata(metadata_path, ['train','test','field'])
 
 
 # downloading and loading data
