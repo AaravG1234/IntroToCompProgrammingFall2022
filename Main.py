@@ -6,6 +6,8 @@
 #https://books.google.com/books?hl=en&lr=&id=ISBKDwAAQBAJ&oi=fnd&pg=PP1&dq=basics+of+expert+models+machine+learning&ots=R9R0Q1lpcA&sig=GfyYBZP8LDyAfZeb9EEXJqOhjD4
 #https://www.sciencedirect.com/science/article/pii/B9780128129708000026
 
+
+#Importing all the pythonn libraries
 import gdown
 import zipfile
 import wget
@@ -29,7 +31,7 @@ from keras.applications.vgg16 import VGG16
 from keras.applications.vgg19 import VGG19
 from keras.applications.densenet import DenseNet121
 
-
+#Downloading and loading the given data
 def get_metadata(metadata_path, which_splits = ['train', 'test']):  
     metadata = pd.read_csv(metadata_path)
     keep_idx = metadata['split'].isin(which_splits)
@@ -43,7 +45,8 @@ def get_data_split(split_name, flatten, all_data, metadata, image_shape):
     if flatten:
         data = data.reshape([-1, np.product(image_shape)])
         return data, labels
-    
+
+#receving the data    
 def get_train_data(flatten, all_data, metadata, image_shape):
     return get_data_split('train', flatten, all_data, metadata, image_shape)
 
@@ -55,11 +58,11 @@ def get_field_data(flatten, all_data, metadata, image_shape):
 
 
 class Helpers:
-#Plotting the data/results
+#Code to plot the data/results
     def plot_one_image(data, labels = [], index = None, image_shape = [64,64,3]):
         num_dims   = len(data.shape)
         num_labels = len(labels)
-
+#reshaping data
         if num_dims == 1:
             #data = data.reshape(target_shape)
             pass
@@ -67,7 +70,7 @@ class Helpers:
             data = data.reshape(np.vstack[-1, image_shape])
             num_dims   = len(data.shape)
 
-    # check if single or multiple images
+# check if single or multiple images
         if num_dims == 3:
             if num_labels > 1:
                 print('Multiple labels does not make sense for single image.')
@@ -82,7 +85,7 @@ class Helpers:
             image = data[index, :]
             label = labels[index]
 
-    # plot image of interest
+ # plot image of interest
         print('Label: %s'%label)
         plt.imshow(image)
         plt.show()
@@ -107,6 +110,7 @@ class Helpers:
         sms = re.sub('_\d','', sms)  
         return sms
 
+#defining accuracies of plot graphs
     def plot_acc(history, ax = None, xlabel = 'Epoch #'):
         history = history.history
         history.update({'epoch':list(range(len(history['val_accuracy'])))})
@@ -128,7 +132,9 @@ class Helpers:
         
         plt.show()
 
+#building the neural networking models
 class models:
+#first model
     def DenseClassifier(hidden_layer_sizes, nn_params):
         model = Sequential()
         model.add(Flatten(input_shape = nn_params['input_shape']))
@@ -143,7 +149,7 @@ class models:
                 optimizer= optimizers.SGD(learning_rate=1e-4, momentum=0.95),
                 metrics=['accuracy'])
         return model
-
+#second model
     def CNNClassifier(num_hidden_layers, nn_params):
         model = Sequential()
 
@@ -171,7 +177,7 @@ class models:
                   optimizer=opt,
                   metrics=['accuracy'])    
         return model
-
+#third model (expert model)
     def TransferClassifier(name, nn_params, trainable = True):
         expert_dict = {'VGG16': VGG16, 
                     'VGG19': VGG19,
@@ -201,7 +207,7 @@ class models:
 
         return expert_model
 
-
+#dataset
 metadata_url         = "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/metadata.csv"
 image_data_url       = 'https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/image_data.npy'
 image_data_path      = './image_data.npy'
@@ -215,17 +221,15 @@ nn_params['output_neurons']    = 1
 nn_params['loss']              = 'binary_crossentropy'
 nn_params['output_activation'] = 'sigmoid'
 
-###
-# gdown.download(image_data_url, './image_data.npy', True)
-# gdown.download(metadata_url, './metadata.csv', True)
+#downloading data
 url1 = "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/metadata.csv"
 ur12 = "https://storage.googleapis.com/inspirit-ai-data-bucket-1/Data/AI%20Scholars/Sessions%206%20-%2010%20(Projects)/Project%20-%20(Healthcare%20A)%20Pneumonia/image_data.npy"
 
 ### pre-loading all data of interest
 _all_data = np.load('image_data.npy')
-_metadata = pkg.get_metadata(metadata_path, ['train','test','field'])
+_metadata = pkg.get_metadata(metadata_path, ['train','test','field']
 
-### preparing definitions
+
 # downloading and loading data
 get_data_split = pkg.get_data_split
 get_metadata    = lambda :                 pkg.get_metadata(metadata_path, ['train','test'])
